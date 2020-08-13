@@ -13,8 +13,8 @@
     "axios": "^0.19.2",
     "react": "16.13.1",
     "react-native": "0.63.2",
-    "react-native-elements": "^2.2.1",
     "react-native-image-crop-picker": "^0.32.2",
+    "react-native-paper": "^4.0.1",
     "react-native-vector-icons": "^7.0.0",
     "rn-fetch-blob": "^0.12.0"
   },
