@@ -7,6 +7,9 @@ import RNFetchBlob from 'rn-fetch-blob';
 
 const ACCESS_TOKEN = '4c71da67b2262bef6a0af1e150f8d1de';
 
+let index = 0;
+let slices = [];
+
 const vimeoProject = () => {
   const [video, setVideo] = useState({});
   const [progress, setProgress] = useState({
@@ -30,6 +33,39 @@ const vimeoProject = () => {
     }
   };
 
+  const getSlices = (size) => {
+    let chunkSize = 50 * 1024 * 1024;
+    let length = Math.round(size / chunkSize);
+    let arrayOfChunks = [];
+
+    var byteIndex = 0;
+    for (let i = 0; i < length; i++) {
+      let chunk = {};
+      var byteEnd = Math.ceil((size / length) * (i + 1));
+      chunk = {
+        id: i,
+        start: byteIndex,
+        end: byteEnd,
+      };
+      arrayOfChunks.push(chunk);
+      byteIndex += byteEnd - byteIndex;
+    }
+    return arrayOfChunks;
+  };
+
+  const prepareFile = async (uri, url, size) => {
+    if (index === 0) {
+      slices = getSlices(size);
+    }
+    uploadVimeo(
+      uri,
+      url,
+      slices[index].start,
+      slices[index].end,
+      slices.length,
+    );
+  };
+
   const createVideo = async () => {
     let body = {
       name: 'Teste Vimeo',
@@ -50,33 +86,50 @@ const vimeoProject = () => {
         ...video,
         url: data.upload.upload_link,
       });
-      uploadVimeo(video.uri, data.upload.upload_link);
+      prepareFile(video.uri, data.upload.upload_link, video.size);
     } catch (error) {
       console.error(error.response);
     }
   };
+  let accept = 0;
+  const onProgress = (written, total) => {
+    if (written === total) {
+      console.log('E IGUALLL');
+    }
+    accept = Number(written) / Number(total);
+    console.log(video.size);
+    console.log(accept);
+    setProgress({written: accept, total: video.size});
+  };
 
-  const uploadVimeo = (uri, url) => {
-    RNFetchBlob.fetch(
-      'PATCH',
-      url,
-      {
-        'Tus-Resumable': '1.0.0',
-        'Upload-Offset': '0',
-        Accept: 'application/vnd.vimeo.*+json;version=3.4',
-        'Content-Type': 'application/offset+octet-stream',
-        Authorization: `bearer ${ACCESS_TOKEN}`,
-      },
-      RNFetchBlob.wrap(uri),
-    )
-      .uploadProgress((written, total) => {
-        setProgress({written, total});
-      })
-      .then((resp) => {
-        setProgress({written: 1, total: 1});
-      })
-      .catch((err) => {
-        console.log(err);
+  const uploadVimeo = async (uri, url, start, end, size) => {
+    RNFetchBlob.fs
+      .slice(uri, `${RNFetchBlob.fs.dirs.DocumentDir}/${index}.mp4`, start, end)
+      .then((path) => {
+        RNFetchBlob.fetch(
+          'PATCH',
+          url,
+          {
+            'Tus-Resumable': '1.0.0',
+            'Upload-Offset': '' + start,
+            Accept: 'application/vnd.vimeo.*+json;version=3.4',
+            'Content-Type': 'application/offset+octet-stream',
+            Authorization: `bearer ${ACCESS_TOKEN}`,
+          },
+          RNFetchBlob.wrap(path),
+        )
+          .uploadProgress((written, total) => onProgress(written, total))
+          .then((resp) => {
+            if (index < size) {
+              index += 1;
+              onProgress(end, end);
+              prepareFile(uri, url, size);
+              console.log(path);
+            }
+          })
+          .catch((err) => {
+            console.log(err);
+          });
       });
   };
 
@@ -89,10 +142,13 @@ const vimeoProject = () => {
       {video.uri && (
         <Card.Content>
           <Title>Video</Title>
-          <ProgressBar
-            progress={progress ? progress.written / progress.total : 0}
-            style={{marginVertical: 10, height: 10}}
-          />
+          {slices.map((item) => (
+            <ProgressBar
+              key={item.id.toString()}
+              progress={progress ? progress.written / progress.total : 0}
+              style={{marginVertical: 10, height: 10}}
+            />
+          ))}
         </Card.Content>
       )}
       <Card.Actions>
